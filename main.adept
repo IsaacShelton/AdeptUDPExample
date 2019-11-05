@@ -30,7 +30,7 @@ func startup(out is_server *bool) successful {
     errno = 0
     #if __windows__
         wsaData WSADATA = undef
-        wsaStartupResult int = WSAStartup(MAKEWORD(2, 2), &wsaData)
+        wsaStartupResult int = WSAStartup(WINSOCK_2_2, &wsaData)
         
         if wsaStartupResult != 0 {
             printf('WSAStartup failed: %d\n', wsaStartupResult)
@@ -64,7 +64,11 @@ func serverStuff {
     
     listenfd = socket(AF_INET, SOCK_DGRAM, 0)
     
+    #if __windows__
+    if listenfd == INVALID_SOCKET {
+    #else
     if listenfd < 0 {
+    #end
         printf('\nError: Failed to establish socket\n')
         exit(0)
     }
@@ -80,7 +84,10 @@ func serverStuff {
         len = sizeof sockaddr_in
         n int = recvfrom(listenfd, &buffer as ptr, 100uz, 0, &cliaddr as *sockaddr, &len)
         puts(&buffer as *ubyte)
-        n = sendto(listenfd, message as ptr, MAXLINE, 0, &cliaddr as *sockaddr, sizeof sockaddr_in)
+        
+        message_buffer 256 ubyte = undef
+        sprintf(&message_buffer as *ubyte, 'Hello Client %d', idx as int)
+        n = sendto(listenfd, &message_buffer as ptr, strlen(&message_buffer as *ubyte) + 1, 0, &cliaddr as *sockaddr, sizeof sockaddr_in)
     }
     
     #if __windows__
@@ -113,6 +120,7 @@ func clientStuff {
         exit(0)
     } else {
         ip_address = inet_ntoa(*cast *in_addr host_entry.h_addr_list[0])
+        printf('%s\n', ip_address)
     }
     
     n int = undef
@@ -125,7 +133,11 @@ func clientStuff {
     
     sockfd = socket(AF_INET, SOCK_DGRAM, 0)
     
+    #if __windows__
+    if sockfd == INVALID_SOCKET {
+    #else
     if sockfd < 0 {
+    #end
         printf('\nError: Failed to establish socket\n')
         exit(0)
     }
@@ -138,7 +150,10 @@ func clientStuff {
     printf('Connected!\n')
     
     repeat 1000 {
-        sendto(sockfd, message as ptr, MAXLINE, 0, null, sizeof sockaddr_in)
+        message_buffer 256 ubyte = undef
+        sprintf(&message_buffer as *ubyte, 'Hello Server %d', idx as int)
+        
+        n = sendto(sockfd, &message_buffer as ptr, strlen(&message_buffer as *ubyte) + 1, 0, null, sizeof sockaddr_in)
         n = recvfrom(sockfd, &buffer as ptr, 100uz, 0, null, null)
         puts(&buffer as *ubyte)
     }
