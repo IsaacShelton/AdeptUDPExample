@@ -1,0 +1,151 @@
+
+import 'sys/cstdio.adept'
+import 'sys/cstdlib.adept'
+import 'sys/cstring.adept'
+import 'sys/cerrno.adept'
+
+#if __windows__
+    import 'windows/winsock.adept'
+#else
+    import 'unix/netdb.adept'
+    import 'unix/unistd.adept'
+    import 'unix/arpa/inet.adept'
+    import 'unix/sys/socket.adept'
+#end
+
+PORT == 5000
+MAXLINE == 1000
+
+func main int {
+    unless startup(undef is_server bool), return 1
+    
+    if is_server, serverStuff()
+    else          clientStuff()
+    
+    cleanup()
+    return 0
+}
+
+func startup(out is_server *bool) successful {
+    errno = 0
+    #if __windows__
+        wsaData WSADATA = undef
+        wsaStartupResult int = WSAStartup(MAKEWORD(2, 2), &wsaData)
+        
+        if wsaStartupResult != 0 {
+            printf('WSAStartup failed: %d\n', wsaStartupResult)
+            return false
+        }
+    #end
+    printf('[s]erver or [c]lient? ')
+    scanf('%c', undef serverOrClient ubyte)
+    *is_server = serverOrClient == 's'ub
+    return true
+}
+
+func cleanup {
+    #if __windows__
+        WSACleanup()
+    #end
+}
+
+func serverStuff {
+    #if __windows__
+        listenfd SOCKET = undef
+    #else
+        listenfd int = undef
+    #end
+    
+    buffer 100 ubyte = undef
+    message *ubyte = 'Hello Client'
+    len socklen_t = undef
+    servaddr, cliaddr sockaddr_in = undef
+    memset(&servaddr, 0, sizeof sockaddr_in)
+    
+    listenfd = socket(AF_INET, SOCK_DGRAM, 0)
+    
+    if listenfd < 0 {
+        printf('\nError: Failed to establish socket\n')
+        exit(0)
+    }
+    
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY)
+    servaddr.sin_port = htons(PORT)
+    servaddr.sin_family = AF_INET
+    printf('Waiting!\n')
+    
+    repeat 1000 {
+        bind(listenfd, &servaddr as *sockaddr, sizeof sockaddr_in)
+        
+        len = sizeof sockaddr_in
+        n int = recvfrom(listenfd, &buffer as ptr, 100uz, 0, &cliaddr as *sockaddr, &len)
+        puts(&buffer as *ubyte)
+        n = sendto(listenfd, message as ptr, MAXLINE, 0, &cliaddr as *sockaddr, sizeof sockaddr_in)
+    }
+    
+    #if __windows__
+        closesocket(listenfd)
+    #else
+        close(listenfd)
+    #end
+}
+
+func clientStuff {
+    #if __windows__
+        sockfd SOCKET = undef
+    #else
+        sockfd int = undef
+    #end
+    
+    buffer 100 ubyte = undef
+    message *ubyte = 'Hello Server'
+    ip_address *ubyte = null
+    host_address 256 ubyte = undef
+    
+    printf('Enter target address: ')
+    getc(stdin)
+    gets(&host_address as *ubyte)
+    
+    host_entry *hostent = gethostbyname(&host_address as *ubyte)
+    
+    if host_entry == null {
+        printf('Failed to resolve host\n')
+        exit(0)
+    } else {
+        ip_address = inet_ntoa(*cast *in_addr host_entry.h_addr_list[0])
+    }
+    
+    n int = undef
+    servaddr sockaddr_in = undef
+    servaddr_size uint = sizeof sockaddr_in
+    memset(&servaddr, 0, sizeof sockaddr_in)
+    servaddr.sin_addr.s_addr = inet_addr(ip_address)
+    servaddr.sin_port = htons(PORT)
+    servaddr.sin_family = AF_INET    
+    
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0)
+    
+    if sockfd < 0 {
+        printf('\nError: Failed to establish socket\n')
+        exit(0)
+    }
+    
+    if connect(sockfd, &servaddr as *sockaddr, sizeof sockaddr_in) < 0 {
+        printf('\nError: Failed to connect\n')
+        exit(0)
+    }
+    
+    printf('Connected!\n')
+    
+    repeat 1000 {
+        sendto(sockfd, message as ptr, MAXLINE, 0, null, sizeof sockaddr_in)
+        n = recvfrom(sockfd, &buffer as ptr, 100uz, 0, null, null)
+        puts(&buffer as *ubyte)
+    }
+    
+    #if __windows__
+        closesocket(sockfd)
+    #else
+        close(sockfd)
+    #end
+}
